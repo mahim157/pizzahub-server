@@ -3,6 +3,10 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { connectDB } from "./config/db.js";
+import {
+  notFoundHandler,
+  errorHandler,
+} from "./middleware/errorHandler.js";
 
 dotenv.config();
 
@@ -35,6 +39,12 @@ app.get("/api/health", (_req, res) => {
     message: "PizzaHub Server is running successfully.",
   });
 });
+
+// Not Found Handler
+app.use(notFoundHandler);
+
+// Global Error Handler
+app.use(errorHandler);
 
 // Start Server
 const startServer = async () => {
