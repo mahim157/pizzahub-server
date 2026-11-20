@@ -293,72 +293,58 @@ export const updateOrderStatus = async (
     const { status } = parsed.data;
     const orderCollection = await getOrderCollection();
 
-    const order = await orderCollection.findOne({
-      _id: new ObjectId(id),
-    });
+    const updateData = {
+      $set: {
+        status,
+        updatedAt: new Date(),
+      },
+    };
 
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
-    }
+    let result;
 
-    // Customer can only cancel their own pending orders
     if (user.role === "customer") {
-      if (order.customerId !== user.id) {
+      // Customers can only cancel their own pending orders.
+      if (status !== "cancelled") {
         return res.status(403).json({
           success: false,
-          message: "You cannot access this order",
+          message: "Customers can only cancel orders",
         });
       }
 
-      if (status !== "cancelled" || order.status !== "pending") {
-        return res.status(400).json({
-          success: false,
-          message: "Customers can only cancel pending orders",
-        });
-      }
-    }
-
-    // Vendor can only accept or reject their own orders
-    if (user.role === "vendor") {
-      if (order.vendorId !== user.id) {
+      result = await orderCollection.updateOne(
+        {
+          _id: new ObjectId(id),
+          customerId: user.id,
+          status: "pending",
+        },
+        updateData
+      );
+    } else {
+      // Vendors can only accept or reject their own pending orders.
+      if (status !== "accepted" && status !== "rejected") {
         return res.status(403).json({
-          success: false,
-          message: "You cannot access this order",
-        });
-      }
-
-      if (
-        status !== "accepted" &&
-        status !== "rejected"
-      ) {
-        return res.status(400).json({
           success: false,
           message: "Vendors can only accept or reject orders",
         });
       }
 
-      if (order.status !== "pending") {
-        return res.status(400).json({
-          success: false,
-          message: "Only pending orders can be updated",
-        });
-      }
+      result = await orderCollection.updateOne(
+        {
+          _id: new ObjectId(id),
+          vendorId: user.id,
+          status: "pending",
+        },
+        updateData
+      );
     }
 
-    await orderCollection.updateOne(
-      {
-        _id: new ObjectId(id),
-      },
-      {
-        $set: {
-          status,
-          updatedAt: new Date(),
-        },
-      }
-    );
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Order not found, not owned by you, or no longer pending",
+      });
+    }
 
     return res.status(200).json({
       success: true,

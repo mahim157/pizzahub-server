@@ -1,7 +1,9 @@
 
 import { z } from "zod";
 
-export const transactionValidationSchema = z.object({
-  plan: z.literal("premium"),
+// Premium Subscription Transaction Validation
+export const transactionValidationSchema = z.strictObject({
+  plan: z.literal("premium", {
+    error: "Only premium subscription plan is allowed",
+  }),
 });
-

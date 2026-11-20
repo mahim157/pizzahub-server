@@ -1,9 +1,10 @@
 
 import { z } from "zod";
 
-export const menuItemValidationSchema = z.object({
+export const menuItemValidationSchema = z.strictObject({
   itemName: z
     .string()
+    .trim()
     .min(3, "Pizza name must be at least 3 characters long")
     .max(100, "Pizza name cannot exceed 100 characters"),
 
@@ -18,19 +19,24 @@ export const menuItemValidationSchema = z.object({
 
   description: z
     .string()
+    .trim()
     .min(10, "Description must be at least 10 characters long")
     .max(1000, "Description cannot exceed 1000 characters"),
 
   price: z
     .number()
-    .positive("Price must be greater than 0"),
+    .positive("Price must be greater than 0")
+    .finite("Price must be a valid number"),
 
-  location: z.object({
-    area: z.string().min(2, "Area is required"),
-    city: z.string().min(2, "City is required"),
+  location: z.strictObject({
+    area: z.string().trim().min(2, "Area is required"),
+    city: z.string().trim().min(2, "City is required"),
   }),
 
   images: z
     .array(z.string().url("Invalid image URL"))
     .min(1, "At least one image is required"),
 });
+
+export const updateMenuItemValidationSchema =
+  menuItemValidationSchema.partial();

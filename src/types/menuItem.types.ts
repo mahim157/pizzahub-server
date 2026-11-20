@@ -1,4 +1,6 @@
 
+import { ObjectId } from "mongodb";
+
 export type MenuCategory =
   | "Classic Pizzas"
   | "Vegetarian Pizzas"
@@ -14,7 +16,7 @@ export type MenuItemStatus =
   | "inactive";
 
 export interface IMenuItem {
-  _id?: string;
+  _id?: ObjectId;
   vendorId: string;
   itemName: string;
   category: MenuCategory;

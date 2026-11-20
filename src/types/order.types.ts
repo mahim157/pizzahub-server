@@ -1,4 +1,6 @@
 
+import { ObjectId } from "mongodb";
+
 export type OrderStatus =
   | "pending"
   | "accepted"
@@ -6,8 +8,8 @@ export type OrderStatus =
   | "cancelled";
 
 export interface IOrder {
-  _id?: string;
-  itemId: string;
+  _id?: ObjectId;
+  itemId: ObjectId;
   vendorId: string;
   customerId: string;
   deliveryDate: Date;

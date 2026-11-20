@@ -1,4 +1,3 @@
-
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { jwt } from "better-auth/plugins";
@@ -29,6 +28,13 @@ export const auth = betterAuth({
   // Application URL
   baseURL: process.env.BETTER_AUTH_URL,
 
+  // Trusted Origins (Frontend এবং Postman/Backend উভয় পোর্ট সাপোর্ট করবে)
+  trustedOrigins: [
+    process.env.CLIENT_URL || "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5000",
+  ],
+
   // Secret Key
   secret: process.env.BETTER_AUTH_SECRET,
 
@@ -42,7 +48,16 @@ export const auth = betterAuth({
 
   // JWT Plugin
   plugins: [
-    jwt(),
+    jwt({
+      jwt: {
+        definePayload: ({ user }) => ({
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          isBlocked: user.isBlocked,
+        }),
+      },
+    }),
   ],
 
   // Additional User Fields
@@ -52,7 +67,7 @@ export const auth = betterAuth({
         type: "string",
         required: true,
         defaultValue: "customer",
-        input: false,
+        input: true, // সাইন-আপের সময় customer বা vendor সিলেক্ট করার জন্য
       },
 
       isBlocked: {
@@ -65,7 +80,7 @@ export const auth = betterAuth({
       businessName: {
         type: "string",
         required: false,
-        input: false,
+        input: true, // ভেন্ডর সাইন-আপের সময় দোকানের নাম দেওয়ার জন্য
       },
 
       subscriptionPlan: {
@@ -79,6 +94,27 @@ export const auth = betterAuth({
         type: "date",
         required: false,
         input: false,
+      },
+    },
+  },
+
+  
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          const allowedSignupRoles = ["customer", "vendor"];
+          const safeRole = allowedSignupRoles.includes(user.role as string)
+            ? user.role
+            : "customer";
+
+          return {
+            data: {
+              ...user,
+              role: safeRole,
+            },
+          };
+        },
       },
     },
   },
