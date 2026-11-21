@@ -45,6 +45,16 @@ app.use(
   })
 );
 
+// Ensure MongoDB connection on every serverless request before auth/API routes
+app.use(async (_req, _res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Better Auth Handler
 app.all("/api/auth/{*any}", toNodeHandler(auth));
 

@@ -1,4 +1,3 @@
-
 import { MongoClient, Db } from "mongodb";
 import dotenv from "dotenv";
 
@@ -10,7 +9,7 @@ if (!MONGODB_URI) {
   throw new Error("MONGODB_URI is missing from .env file");
 }
 
-const client = new MongoClient(MONGODB_URI);
+export const client = new MongoClient(MONGODB_URI);
 
 let database: Db | null = null;
 
