@@ -1,11 +1,16 @@
-
-import { ObjectId } from "mongodb";
+﻿import { ObjectId } from "mongodb";
 
 export type OrderStatus =
   | "pending"
   | "accepted"
   | "rejected"
   | "cancelled";
+
+export interface IOrderTimelineEntry {
+  status: OrderStatus;
+  timestamp: Date;
+  note?: string;
+}
 
 export interface IOrder {
   _id?: ObjectId;
@@ -16,6 +21,7 @@ export interface IOrder {
   deliveryAddress: string;
   message?: string;
   status: OrderStatus;
+  statusHistory?: IOrderTimelineEntry[];
   createdAt: Date;
   updatedAt: Date;
 }

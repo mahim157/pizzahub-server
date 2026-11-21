@@ -1,4 +1,4 @@
-
+﻿
 import { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 
@@ -10,7 +10,6 @@ import {
   updateOrderStatusSchema,
 } from "../utils/order.validation.js";
 
-// Authenticated user information
 interface AuthenticatedUser {
   id: string;
   role: "customer" | "vendor" | "admin";
@@ -80,16 +79,54 @@ export const createOrder = async (
       });
     }
 
+    // Prevent vendors from ordering their own menu items.
+    if (String(menuItem.vendorId) === user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Vendors cannot order their own menu items",
+      });
+    }
+
     const orderCollection = await getOrderCollection();
+
+    // Normalize delivery date to UTC midnight.
+    const normalizedDeliveryDate = new Date(deliveryDate);
+    normalizedDeliveryDate.setUTCHours(0, 0, 0, 0);
+
+    // Prevent duplicate active orders for the same
+    // customer, menu item, and delivery date.
+    const existingOrder = await orderCollection.findOne({
+      customerId: user.id,
+      itemId: new ObjectId(itemId),
+      deliveryDate: normalizedDeliveryDate,
+      status: {
+        $in: ["pending", "accepted"],
+      },
+    });
+
+    if (existingOrder) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "You already have an active order for this item on this delivery date",
+      });
+    }
 
     const newOrder = {
       itemId: new ObjectId(itemId),
       vendorId: menuItem.vendorId,
       customerId: user.id,
-      deliveryDate: new Date(deliveryDate),
+      deliveryDate: normalizedDeliveryDate,
       deliveryAddress,
       message: message || "",
       status: "pending" as const,
+      statusHistory: [
+        {
+          status: "pending" as const,
+          timestamp: new Date(),
+          note: "Order placed by customer",
+        },
+      ],
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -293,17 +330,29 @@ export const updateOrderStatus = async (
     const { status } = parsed.data;
     const orderCollection = await getOrderCollection();
 
-    const updateData = {
+    const statusNotes: Record<string, string> = {
+      accepted: "Order accepted by restaurant",
+      rejected: "Order rejected by restaurant",
+      cancelled: "Order cancelled by customer",
+    };
+
+    const updateData: any = {
       $set: {
         status,
         updatedAt: new Date(),
+      },
+      $push: {
+        statusHistory: {
+          status,
+          timestamp: new Date(),
+          note: statusNotes[status] || `Order marked as ${status}`,
+        },
       },
     };
 
     let result;
 
     if (user.role === "customer") {
-      // Customers can only cancel their own pending orders.
       if (status !== "cancelled") {
         return res.status(403).json({
           success: false,
@@ -320,7 +369,6 @@ export const updateOrderStatus = async (
         updateData
       );
     } else {
-      // Vendors can only accept or reject their own pending orders.
       if (status !== "accepted" && status !== "rejected") {
         return res.status(403).json({
           success: false,
@@ -422,3 +470,4 @@ export const getAllOrdersForAdmin = async (
     });
   }
 };
+
