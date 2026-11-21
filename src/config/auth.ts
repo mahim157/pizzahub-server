@@ -22,18 +22,31 @@ if (!process.env.BETTER_AUTH_URL) {
 }
 
 const client = new MongoClient(MONGODB_URI);
+const isProduction = process.env.NODE_ENV === "production";
+const clientOrigin = process.env.CLIENT_URL?.replace(/\/$/, "");
 
 // Better Auth Configuration
 export const auth = betterAuth({
   // Application URL
   baseURL: process.env.BETTER_AUTH_URL,
 
-  // Trusted Origins (Frontend এবং Postman/Backend উভয় পোর্ট সাপোর্ট করবে)
+  // Trusted Origins
   trustedOrigins: [
-    process.env.CLIENT_URL || "http://localhost:3000",
+    "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:5000",
+    "https://pizzahub-client-2wd4.vercel.app",
+    ...(clientOrigin ? [clientOrigin] : []),
   ],
+
+  // Cross-Domain Cookie Configuration for Vercel
+  advanced: {
+    defaultCookieAttributes: {
+      sameSite: isProduction ? "none" : "lax",
+      secure: isProduction,
+      httpOnly: true,
+    },
+  },
 
   // Secret Key
   secret: process.env.BETTER_AUTH_SECRET,
@@ -67,29 +80,25 @@ export const auth = betterAuth({
         type: "string",
         required: true,
         defaultValue: "customer",
-        input: true, // সাইন-আপের সময় customer বা vendor সিলেক্ট করার জন্য
+        input: true,
       },
-
       isBlocked: {
         type: "boolean",
         required: true,
         defaultValue: false,
         input: false,
       },
-
       businessName: {
         type: "string",
         required: false,
-        input: true, // ভেন্ডর সাইন-আপের সময় দোকানের নাম দেওয়ার জন্য
+        input: true,
       },
-
       subscriptionPlan: {
         type: "string",
         required: true,
         defaultValue: "free",
         input: false,
       },
-
       subscriptionExpiresAt: {
         type: "date",
         required: false,
@@ -98,7 +107,6 @@ export const auth = betterAuth({
     },
   },
 
-  
   databaseHooks: {
     user: {
       create: {

@@ -1,4 +1,3 @@
-
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -28,12 +27,20 @@ dotenv.config();
 
 const app = express();
 
+// Trust Vercel reverse proxy for secure cookies
+app.set("trust proxy", 1);
+
 const PORT = Number(process.env.PORT) || 5000;
+const clientOrigin = process.env.CLIENT_URL?.replace(/\/$/, "");
 
 // CORS Middleware
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: [
+      "http://localhost:3000",
+      "https://pizzahub-client-2wd4.vercel.app",
+      ...(clientOrigin ? [clientOrigin] : []),
+    ],
     credentials: true,
   })
 );
@@ -41,8 +48,7 @@ app.use(
 // Better Auth Handler
 app.all("/api/auth/{*any}", toNodeHandler(auth));
 
-// Stripe Webhook
-// IMPORTANT: Must be before express.json()
+// Stripe Webhook (Must be before express.json())
 app.post(
   "/api/subscriptions/webhook",
   express.raw({ type: "application/json" }),
@@ -58,8 +64,6 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/admin", adminRoutes);
-
-// Image Upload Route
 app.use("/api/images", imageRoutes);
 
 // Home Route
@@ -84,18 +88,21 @@ app.use(notFoundHandler);
 // Global Error Handler
 app.use(errorHandler);
 
-// Start Server
-const startServer = async () => {
-  try {
-    await connectDB();
+// Start Server (Local development)
+if (process.env.NODE_ENV !== "production") {
+  const startServer = async () => {
+    try {
+      await connectDB();
+      app.listen(PORT, () => {
+        console.log(`PizzaHub Server running on port ${PORT}`);
+      });
+    } catch (error) {
+      console.error("Failed to start PizzaHub Server:", error);
+      process.exit(1);
+    }
+  };
 
-    app.listen(PORT, () => {
-      console.log(`PizzaHub Server running on port ${PORT}`);
-    });
-  } catch (error) {
-    console.error("Failed to start PizzaHub Server:", error);
-    process.exit(1);
-  }
-};
+  startServer();
+}
 
-startServer();
+export default app;
