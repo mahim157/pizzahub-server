@@ -1,3 +1,4 @@
+﻿
 import { connectDB } from "../config/db.js";
 import { Request, Response } from "express";
 import { ObjectId, Document } from "mongodb";
@@ -81,22 +82,120 @@ export const createMenuItem = async (
   }
 };
 
-// 2. Get all approved menu items
+// 2. Get approved menu items with search, filters and sorting
 export const getApprovedMenuItems = async (
-  _req: Request,
+  req: Request,
   res: Response
 ) => {
   try {
     const menuItemCollection = await getMenuItemCollection();
 
+    const search =
+      typeof req.query.search === "string"
+        ? req.query.search.trim()
+        : "";
+
+    const category =
+      typeof req.query.category === "string"
+        ? req.query.category.trim()
+        : "";
+
+    const location =
+      typeof req.query.location === "string"
+        ? req.query.location.trim()
+        : "";
+
+    const sort =
+      typeof req.query.sort === "string"
+        ? req.query.sort.trim()
+        : "";
+
+    // Allowed categories
+    const allowedCategories = [
+      "Classic Pizzas",
+      "Vegetarian Pizzas",
+      "Meat Lovers",
+      "Specialty / Gourmet Pizzas",
+      "Sides & Appetizers",
+      "Beverages & Desserts",
+    ];
+
+    if (category && !allowedCategories.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid menu category",
+      });
+    }
+
+    // Validate sorting option
+    if (sort && !["price_asc", "price_desc"].includes(sort)) {
+      return res.status(400).json({
+        success: false,
+        message: "Sort must be price_asc or price_desc",
+      });
+    }
+
+    // Escape special regex characters
+    const escapeRegex = (value: string) =>
+      value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    // Only approved items are publicly visible
+    const filter: Record<string, any> = {
+      status: "approved",
+    };
+
+    // Search by item name
+    if (search) {
+      filter.itemName = {
+        $regex: escapeRegex(search),
+        $options: "i",
+      };
+    }
+
+    // Filter by category
+    if (category) {
+      filter.category = category;
+    }
+
+    // Filter by area or city
+    if (location) {
+      const locationRegex = {
+        $regex: escapeRegex(location),
+        $options: "i",
+      };
+
+      filter.$or = [
+        { "location.area": locationRegex },
+        { "location.city": locationRegex },
+      ];
+    }
+
+    // Sorting
+    let sortOption: Record<string, 1 | -1> = {
+      createdAt: -1,
+    };
+
+    if (sort === "price_asc") {
+      sortOption = { price: 1 };
+    } else if (sort === "price_desc") {
+      sortOption = { price: -1 };
+    }
+
     const menuItems = await menuItemCollection
-      .find({ status: "approved" })
-      .sort({ createdAt: -1 })
+      .find(filter)
+      .sort(sortOption)
       .toArray();
 
     return res.status(200).json({
       success: true,
-      message: "Approved menu items retrieved successfully",
+      message: "Menu items retrieved successfully",
+      total: menuItems.length,
+      filters: {
+        search: search || null,
+        category: category || null,
+        location: location || null,
+        sort: sort || "latest",
+      },
       data: menuItems,
     });
   } catch (error) {
@@ -432,7 +531,6 @@ export const updateMenuItemApproval = async (
 
     const menuItemCollection = await getMenuItemCollection();
 
-    // Find the pending menu item
     const menuItem = await menuItemCollection.findOne({
       _id: new ObjectId(id),
       status: "pending",
@@ -467,11 +565,9 @@ export const updateMenuItemApproval = async (
 
       const isPremium =
         vendor.subscriptionPlan === "premium" &&
-        (
-          !vendor.subscriptionExpiresAt ||
-          new Date(vendor.subscriptionExpiresAt).getTime() >
-            Date.now()
-        );
+        vendor.subscriptionExpiresAt != null &&
+        new Date(vendor.subscriptionExpiresAt).getTime() >
+          Date.now();
 
       if (!isPremium) {
         const approvedCount =
@@ -490,7 +586,6 @@ export const updateMenuItemApproval = async (
       }
     }
 
-    // Update approval status
     const result = await menuItemCollection.findOneAndUpdate(
       {
         _id: new ObjectId(id),
@@ -528,3 +623,169 @@ export const updateMenuItemApproval = async (
     });
   }
 };
+
+// 9. Add or update review & rating for a menu item (Customer only)
+export const addMenuItemReview = async (req: Request, res: Response) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+    if (user.role !== "customer") {
+      return res.status(403).json({ success: false, message: "Only customers can submit reviews" });
+    }
+
+    const id = String(req.params.id || "");
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid menu item ID" });
+    }
+
+    const rating = Number(req.body?.rating);
+    const comment = String(req.body?.comment || "").trim();
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, message: "Rating must be between 1 and 5" });
+    }
+    if (!comment) {
+      return res.status(400).json({ success: false, message: "Review comment is required" });
+    }
+
+    const menuItemCollection = await getMenuItemCollection();
+    const item = await menuItemCollection.findOne({ _id: new ObjectId(id), status: "approved" });
+
+    if (!item) {
+      return res.status(404).json({ success: false, message: "Menu item not found" });
+    }
+
+    const existingReviews = Array.isArray((item as any).reviews) ? (item as any).reviews : [];
+    const filteredReviews = existingReviews.filter(
+      (r: any) => String(r.customerId) !== String(user.id)
+    );
+
+    const newReview = {
+      customerId: String(user.id),
+      customerName: (user as { name?: string; email?: string }).name || user.email || "Pizza Lover",
+      rating,
+      comment,
+      createdAt: new Date(),
+    };
+
+    const updatedReviews = [newReview, ...filteredReviews];
+    const totalReviews = updatedReviews.length;
+    const averageRating = Number(
+      (updatedReviews.reduce((sum: number, r: any) => sum + Number(r.rating || 0), 0) / totalReviews).toFixed(1)
+    );
+
+    await menuItemCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          reviews: updatedReviews,
+          averageRating,
+          totalReviews,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Review submitted successfully!",
+      data: { reviews: updatedReviews, averageRating, totalReviews },
+    });
+  } catch (error) {
+    console.error("Add Review Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to submit review" });
+  }
+};
+
+// 10. Toggle favorite menu item for logged-in user
+export const toggleFavoriteMenuItem = async (req: Request, res: Response) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const id = String(req.params.id || "");
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid menu item ID" });
+    }
+
+    const db = await connectDB();
+    const userCollection = db.collection("user");
+    const userQuery = ObjectId.isValid(String(user.id))
+      ? { $or: [{ _id: new ObjectId(String(user.id)) }, { id: String(user.id) }] }
+      : { id: String(user.id) };
+
+    const dbUser = await userCollection.findOne(userQuery);
+    const currentFavorites: string[] = Array.isArray(dbUser?.favorites)
+      ? dbUser.favorites.map(String)
+      : [];
+
+    const exists = currentFavorites.includes(id);
+    const updatedFavorites = exists
+      ? currentFavorites.filter((favId) => favId !== id)
+      : [...currentFavorites, id];
+
+    await userCollection.updateOne(userQuery, {
+      $set: { favorites: updatedFavorites, updatedAt: new Date() },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: exists ? "Removed from favorites" : "Added to favorites",
+      data: { isFavorite: !exists, favorites: updatedFavorites },
+    });
+  } catch (error) {
+    console.error("Toggle Favorite Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to update favorites" });
+  }
+};
+
+// 11. Get logged-in user's favorite menu items
+export const getMyFavoriteMenuItems = async (req: Request, res: Response) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const db = await connectDB();
+    const userCollection = db.collection("user");
+    const userQuery = ObjectId.isValid(String(user.id))
+      ? { $or: [{ _id: new ObjectId(String(user.id)) }, { id: String(user.id) }] }
+      : { id: String(user.id) };
+
+    const dbUser = await userCollection.findOne(userQuery);
+    const favoriteIds: string[] = Array.isArray(dbUser?.favorites)
+      ? dbUser.favorites.filter((fid: string) => ObjectId.isValid(fid))
+      : [];
+
+    if (favoriteIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        favoriteIds: [],
+      });
+    }
+
+    const menuItemCollection = await getMenuItemCollection();
+    const items = await menuItemCollection
+      .find({
+        _id: { $in: favoriteIds.map((fid) => new ObjectId(fid)) },
+        status: "approved",
+      })
+      .toArray();
+
+    return res.status(200).json({
+      success: true,
+      data: items,
+      favoriteIds,
+    });
+  } catch (error) {
+    console.error("Get Favorites Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch favorites" });
+  }
+};
+

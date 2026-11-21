@@ -1,5 +1,4 @@
-
-import { Router } from "express";
+﻿import { Router } from "express";
 
 import {
   createMenuItem,
@@ -10,6 +9,9 @@ import {
   deleteMenuItem,
   getAllMenuItemsForAdmin,
   updateMenuItemApproval,
+  addMenuItemReview,
+  toggleFavoriteMenuItem,
+  getMyFavoriteMenuItems,
 } from "../controllers/menuItem.controller.js";
 
 import {
@@ -18,6 +20,16 @@ import {
 } from "../middleware/auth.middleware.js";
 
 const router = Router();
+
+// Public: Get all approved menu items
+router.get("/", getApprovedMenuItems);
+
+// Authenticated: Get my favorite menu items
+router.get(
+  "/favorites/my",
+  authenticateUser,
+  getMyFavoriteMenuItems
+);
 
 // Vendor: Create a new menu item
 router.post(
@@ -29,7 +41,7 @@ router.post(
 
 // Vendor: Get own menu items
 router.get(
-  "/my-items",
+  "/vendor/my-items",
   authenticateUser,
   authorizeRoles("vendor"),
   getVendorMenuItems
@@ -43,12 +55,30 @@ router.get(
   getAllMenuItemsForAdmin
 );
 
-// Admin: Approve or Reject menu item
+// Admin: Approve or reject a menu item
 router.patch(
-  "/admin/:id/status",
+  "/admin/:id/approval",
   authenticateUser,
   authorizeRoles("admin"),
   updateMenuItemApproval
+);
+
+// Public: Get one approved menu item by ID
+router.get("/:id", getApprovedMenuItemById);
+
+// Customer: Add or update a review
+router.post(
+  "/:id/reviews",
+  authenticateUser,
+  authorizeRoles("customer"),
+  addMenuItemReview
+);
+
+// Authenticated: Toggle favorite menu item
+router.post(
+  "/:id/favorite",
+  authenticateUser,
+  toggleFavoriteMenuItem
 );
 
 // Vendor: Update own menu item
@@ -66,11 +96,5 @@ router.delete(
   authorizeRoles("vendor"),
   deleteMenuItem
 );
-
-// Customer: Get all approved menu items
-router.get("/", getApprovedMenuItems);
-
-// Customer: Get a single approved menu item
-router.get("/:id", getApprovedMenuItemById);
 
 export default router;
