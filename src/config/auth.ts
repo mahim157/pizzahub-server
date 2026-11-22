@@ -14,7 +14,6 @@ if (!process.env.BETTER_AUTH_URL) {
   throw new Error("BETTER_AUTH_URL is missing from .env file");
 }
 
-// Vercel-এ সবসময় true রিটার্ন করবে
 const isProduction =
   process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 
@@ -46,6 +45,17 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+
+  ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ? {
+        socialProviders: {
+          google: {
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          },
+        },
+      }
+    : {}),
 
   plugins: [
     jwt({
